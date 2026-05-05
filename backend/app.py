@@ -74,6 +74,7 @@ def login():
         "role": user[1]
     }), 200
 
+
 @app.route("/events", methods=["GET"])
 def get_events():
     team = request.args.get("team")
@@ -225,6 +226,147 @@ def delete_event(event_id):
     conn.close()
 
     return jsonify({"message": "event deleted"}), 200
+
+
+@app.route("/events/<int:event_id>/signup", methods=["POST"])
+def signup_for_event(event_id):
+    data = request.get_json()
+
+    # 1. Validate that all required fields are present
+    required = ["firstName", "lastName", "regiment", "company", "cNumber"]
+    for field in required:
+        if field not in data or not data[field]:
+            return jsonify({"error": f"missing field: {field}"}), 400
+
+    conn = get_conn()
+    cur = conn.cursor()
+    
+    try:
+        # 2. Insert the cadet's sign-up info into the database
+        cur.execute("""
+            INSERT INTO event_registrations (event_id, first_name, last_name, regiment, company, c_number)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            RETURNING id;
+        """, (
+            event_id,
+            data["firstName"],
+            data["lastName"],
+            data["regiment"],
+            data["company"],
+            data["cNumber"]
+        ))
+        new_id = cur.fetchone()[0]
+        conn.commit()
+        return jsonify({"message": "Successfully signed up", "id": new_id}), 201
+        
+    except psycopg2.IntegrityError:
+        # This catches the UNIQUE constraint if a cadet tries to sign up twice
+        conn.rollback()
+        return jsonify({"error": "Cadet is already signed up for this event."}), 409
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"error": "Database error occurred."}), 500
+    finally:
+        cur.close()
+        conn.close()
+
+@app.route("/events/<int:event_id>/roster", methods=["GET"])
+def get_event_roster(event_id):
+    # Enforce role protection using your existing helper
+    if not is_admin(request):
+        return jsonify({"error": "forbidden"}), 403
+
+    conn = get_conn()
+    cur = conn.cursor()
+    
+    try:
+        # Fetch signups ordered neatly by Regiment, Company, and Last Name
+        cur.execute("""
+            SELECT first_name, last_name, regiment, company, c_number, registration_time
+            FROM event_registrations
+            WHERE event_id = %s
+            ORDER BY regiment, company, last_name;
+        """, (event_id,))
+        
+        rows = cur.fetchall()
+        roster = []
+        for row in rows:
+            roster.append({
+                "firstName": row[0],
+                "lastName": row[1],
+                "regiment": row[2],
+                "company": row[3],
+                "cNumber": row[4],
+                "registrationTime": str(row[5])
+            })
+            
+        return jsonify(roster), 200
+    except Exception as e:
+        return jsonify({"error": "Database error occurred."}), 500
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.route("/events/<int:event_id>/signup", methods=["POST", "DELETE"])
+def handle_event_signup(event_id):
+    if request.method == "POST":
+        data = request.get_json()
+        required = ["firstName", "lastName", "regiment", "company", "cNumber"]
+        for field in required:
+            if field not in data or not data[field]:
+                return jsonify({"error": f"missing field: {field}"}), 400
+
+        conn = get_conn()
+        cur = conn.cursor()
+        try:
+            cur.execute("""
+                INSERT INTO event_registrations (event_id, first_name, last_name, regiment, company, c_number)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                RETURNING id;
+            """, (event_id, data["firstName"], data["lastName"], data["regiment"], data["company"], data["cNumber"]))
+            new_id = cur.fetchone()[0]
+            conn.commit()
+            return jsonify({"message": "Successfully signed up", "id": new_id}), 201
+        except psycopg2.IntegrityError:
+            conn.rollback()
+            return jsonify({"error": "Cadet is already signed up for this event."}), 409
+        except Exception as e:
+            conn.rollback()
+            return jsonify({"error": "Database error occurred."}), 500
+        finally:
+            cur.close()
+            conn.close()
+
+    elif request.method == "DELETE":
+        data = request.get_json()
+        c_number = data.get("cNumber")
+        
+        if not c_number:
+            return jsonify({"error": "Missing C-Number"}), 400
+
+        conn = get_conn()
+        cur = conn.cursor()
+        try:
+            # Delete the specific entry matching the event and C-Number
+            cur.execute("""
+                DELETE FROM event_registrations 
+                WHERE event_id = %s AND c_number = %s;
+            """, (event_id, c_number))
+            
+            # Check if a row was actually deleted
+            if cur.rowcount == 0:
+                return jsonify({"error": "No registration found matching that C-Number for this event."}), 404
+                
+            conn.commit()
+            return jsonify({"message": "Successfully cancelled sign-up"}), 200
+        except Exception as e:
+            conn.rollback()
+            return jsonify({"error": "Database error occurred."}), 500
+        finally:
+            cur.close()
+            conn.close()
+
 
 
 if __name__ == "__main__":
