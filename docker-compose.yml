@@ -1,0 +1,40 @@
+services:
+  db:
+    image: postgres:15
+    container_name: corps_squad_db
+    environment:
+      POSTGRES_DB: corps_squad
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
+
+  backend:
+    build: ./backend
+    container_name: corps_squad_backend
+    environment:
+      DB_HOST: db
+      DB_NAME: corps_squad
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_PORT: 5432
+    ports:
+      - "5001:5000"
+    depends_on:
+      - db
+
+  frontend:
+    build: ./frontend
+    container_name: corps_squad_frontend
+    ports:
+      - "3000:3000"
+    environment:
+      VITE_API_BASE_URL: http://localhost:5001
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
