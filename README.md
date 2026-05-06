@@ -1,7 +1,6 @@
 # CorpsSquadSpectatorPortal
 
-Open the submitted zip file, and then once you have navigated to the parent folder (and are on
-EECSnet), in your terminal, run:
+Open the submitted zip file, and then once you have navigated to the parent folder, in your terminal, run:
 
   docker compose up –build
 
