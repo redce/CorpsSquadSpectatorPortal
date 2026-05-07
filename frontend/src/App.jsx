@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
 
+// TEAMMATE UPDATE: Default team is now "Army"
 const emptyForm = {
   team: "Army",
   sport: "",
@@ -116,7 +117,8 @@ const styles = {
 };
 
 // --- MERGED INDEPENDENT COMPONENT: EventCard ---
-function EventCard({ event, isAdmin, handleDelete }) {
+// CIA+ UPDATE: Still accepts the securely stored JWT token as a prop
+function EventCard({ event, isAdmin, handleDelete, token }) {
   const [showForm, setShowForm] = useState(false);
   const [formMode, setFormMode] = useState("signup"); // "signup" or "cancel"
   const [showRoster, setShowRoster] = useState(false);
@@ -182,13 +184,14 @@ function EventCard({ event, isAdmin, handleDelete }) {
       try {
         const res = await fetch(`${API_BASE_URL}/events/${event.id}/roster`, {
           method: "GET",
-          headers: { "X-Role": "admin" }
+          // CIA+ UPDATE: Passes the JWT Bearer token instead of the spoofable X-Role header
+          headers: { "Authorization": `Bearer ${token}` }
         });
         if (res.ok) {
           const data = await res.json();
           setRoster(data);
         } else {
-          alert("Failed to load roster data.");
+          alert("Failed to load roster data. Token may be expired.");
         }
       } catch (err) {
         console.error("Error fetching roster:", err);
@@ -316,8 +319,8 @@ function EventCard({ event, isAdmin, handleDelete }) {
 
               {formMode === "signup" && (
                 <>
-                  <input style={styles.input} type="text" name="firstName" placeholder="First Name" value={formData.firstName} onChange={handleInputChange} required />
-                  <input style={styles.input} type="text" name="lastName" placeholder="Last Name" value={formData.lastName} onChange={handleInputChange} required />
+                  <input style={styles.input} type="text" name="firstName" placeholder="First Name" value={formData.firstName} onChange={handleInputChange} maxLength="50" required />
+                  <input style={styles.input} type="text" name="lastName" placeholder="Last Name" value={formData.lastName} onChange={handleInputChange} maxLength="50" required />
                   <div style={{ display: "flex", gap: "10px" }}>
                     <div style={{ flex: 1 }}>
                       <label style={styles.label}>Regiment</label>
@@ -339,8 +342,20 @@ function EventCard({ event, isAdmin, handleDelete }) {
                   </div>
                 </>
               )}
-
-              <input style={styles.input} type="text" name="cNumber" placeholder="C Number (e.g., C12345)" value={formData.cNumber} onChange={handleInputChange} required />
+              
+              {/* CIA+ UPDATE: C-Number format strict enforcement (C + 8 digits) kept intact! */}
+              <input 
+                style={styles.input} 
+                type="text" 
+                name="cNumber" 
+                placeholder="C Number (e.g., C12345678)" 
+                value={formData.cNumber} 
+                onChange={handleInputChange} 
+                maxLength="9"
+                pattern="[Cc][0-9]{8}"
+                title="Must be a 'C' followed by exactly 8 digits (e.g., C12345678)"
+                required 
+              />
 
               <div style={{ display: "flex", gap: "10px", marginTop: "5px", flexWrap: "wrap" }}>
                 <button type="submit" style={formMode === "signup" ? styles.button : styles.dangerButton}>
@@ -383,6 +398,9 @@ export default function App() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [currentRole, setCurrentRole] = useState("");
   const [loginError, setLoginError] = useState("");
+  
+  // CIA+ UPDATE: State to store the JWT securely in memory kept intact!
+  const [token, setToken] = useState("");
 
   async function handleLogin(e) {
     e.preventDefault();
@@ -398,11 +416,14 @@ export default function App() {
         setLoginError(data.error || "Login failed");
         return;
       }
-      if (data.role === "admin") {
+      
+      // CIA+ UPDATE: Save the JWT token returned from the backend upon successful login
+      if (data.token) {
+        setToken(data.token);
         setIsAdmin(true);
-        setCurrentRole("admin");
+        setCurrentRole(data.role);
       } else {
-        setLoginError("User is not an admin");
+        setLoginError("User is not an admin or missing authentication token.");
       }
     } catch (err) {
       setLoginError("Unable to reach backend");
@@ -415,6 +436,7 @@ export default function App() {
     setUsername("");
     setPassword("");
     setLoginError("");
+    setToken(""); // CIA+ UPDATE: Clears the JWT from memory securely on logout
   }
 
   async function loadEvents() {
@@ -454,12 +476,13 @@ export default function App() {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-Role": currentRole
+        // CIA+ UPDATE: Pass the JWT Bearer token instead of the spoofable X-Role header
+        "Authorization": `Bearer ${token}`
       },
       body: JSON.stringify(form)
     });
     if (!res.ok) {
-      alert("Failed to create event");
+      alert("Failed to create event. Token may be expired.");
       return;
     }
     setForm(emptyForm);
@@ -469,10 +492,11 @@ export default function App() {
   async function handleDelete(id) {
     const res = await fetch(`${API_BASE_URL}/events/${id}`, {
       method: "DELETE",
-      headers: { "X-Role": currentRole }
+      // CIA+ UPDATE: Pass the JWT Bearer token instead of the spoofable X-Role header
+      headers: { "Authorization": `Bearer ${token}` }
     });
     if (!res.ok) {
-      alert("Failed to delete event");
+      alert("Failed to delete event. Token may be expired.");
       return;
     }
     loadEvents();
@@ -490,8 +514,8 @@ export default function App() {
           <h2>Admin Login</h2>
           {!isAdmin ? (
             <form onSubmit={handleLogin} style={{ display: "grid", gap: "10px", maxWidth: "400px" }}>
-              <input style={styles.input} type="text" placeholder="Username" value={username} onChange={(e) => setUsername(e.target.value)} required />
-              <input style={styles.input} type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+              <input style={styles.input} type="text" placeholder="Username" value={username} onChange={(e) => setUsername(e.target.value)} maxLength="50" required />
+              <input style={styles.input} type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} maxLength="50" required />
               <button style={styles.button} type="submit">Login</button>
               {loginError && <p style={styles.errorText}>{loginError}</p>}
             </form>
@@ -555,6 +579,8 @@ export default function App() {
           <section style={styles.card}>
             <h2>Admin: Create Event</h2>
             <form onSubmit={handleCreate} style={{ display: "grid", gap: "10px" }}>
+              
+              {/* TEAMMATE UPDATE: Dropdown for Team */}
               <select
                 style={styles.select}
                 name="team"
@@ -565,6 +591,7 @@ export default function App() {
                 <option value="Army">Army</option>
               </select>
 
+              {/* TEAMMATE UPDATE: Dropdown for Sport */}
               <select
                 style={styles.select}
                 name="sport"
@@ -610,9 +637,10 @@ export default function App() {
                 <option value="Neutral">Neutral</option>
               </select>
 
-              <input style={styles.input} name="opponent" placeholder="Opponent" value={form.opponent} onChange={handleChange} required />
-              <input style={styles.input} name="location" placeholder="Location" value={form.location} onChange={handleChange} required />
+              <input style={styles.input} name="opponent" placeholder="Opponent" value={form.opponent} onChange={handleChange} maxLength="100" required />
+              <input style={styles.input} name="location" placeholder="Location" value={form.location} onChange={handleChange} maxLength="200" required />
 
+              {/* TEAMMATE UPDATE: Dropdown for Incentive */}
               <select
                 style={styles.select}
                 name="incentive"
@@ -642,7 +670,13 @@ export default function App() {
           {error && <p style={styles.errorText}>{error}</p>}
           {!loading && !error && events.length === 0 && <p>No events found.</p>}
           {!loading && !error && events.map((event) => (
-            <EventCard key={event.id} event={event} isAdmin={isAdmin} handleDelete={handleDelete} />
+            <EventCard 
+              key={event.id} 
+              event={event} 
+              isAdmin={isAdmin} 
+              handleDelete={handleDelete} 
+              token={token} // CIA+ UPDATE: Pass the secure token to the EventCard component 
+            />
           ))}
         </section>
       </div>
