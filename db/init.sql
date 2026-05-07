@@ -1,8 +1,8 @@
 CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
     username VARCHAR(50) UNIQUE NOT NULL,
-    password VARCHAR(100) NOT NULL,
-    role VARCHAR(20) NOT NULL
+    password VARCHAR(255) NOT NULL,
+    role VARCHAR(20) DEFAULT 'viewer'
 );
 
 CREATE TABLE IF NOT EXISTS events (
@@ -32,8 +32,7 @@ CREATE TABLE IF NOT EXISTS event_registrations (
 
 INSERT INTO users (username, password, role)
 VALUES
-    ('admin', 'iamabigfroghater', 'admin'),
-    ('viewer', 'iamabigfroghater', 'viewer')
+    ('admin', 'scrypt:32768:8:1$6FUid8myEu6s7i3Q$6a361f8585e9355d0a0dd3b798eff2a3b0680f5764fd5f97f7e296b4b231508be88fba26a3af700cc73490840fdb964139004bc2fbf77c97bf91d76df6ca4e8f', 'admin')
 ON CONFLICT (username) DO NOTHING;
 
 INSERT INTO events (team, sport, date, time, at, opponent, location, incentive)
